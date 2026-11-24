@@ -32,7 +32,10 @@ ConfirmFn = Callable[[str, dict[str, Any]], bool]
 """Signature of a confirmation callback: ``(tool_name, validated_args) -> approved?``."""
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-ISO_TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$")
+ISO_TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2}|Z)$")
+# Outbox policy: every e-mail body must end with this exact line. The tool schema
+# deliberately does not mention it - the agent discovers it from the error and learns it.
+EMAIL_FOOTER = "-- Sent via AI assistant"
 MAX_READ_CHARS = 20_000
 MAX_LISTED_FILES = 50
 SEARCH_TIMEOUT_SECONDS = 5
@@ -264,25 +267,43 @@ def _email_error(to: str) -> str | None:
     )
 
 
+def _local_utc_offset() -> str:
+    """Return this machine's current UTC offset formatted as ``+HH:MM``."""
+    raw = datetime.now().astimezone().strftime("%z") or "+0000"
+    return f"{raw[:3]}:{raw[3:5]}"
+
+
 def _time_error(time: str) -> str | None:
-    """Return the invalid-time error message for ``time``, or None if it is valid ISO 8601."""
+    """Return the invalid-time error for ``time``, or None if it is ISO 8601 with a UTC offset."""
     value = time.strip()
     if ISO_TIME_RE.match(value):
         try:
-            datetime.fromisoformat(value)
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
             return None
         except ValueError:
             pass
+    offset = _local_utc_offset()
     return (
-        f"ERROR: Invalid time format '{time}'. create_calendar_event requires ISO 8601 format "
-        "YYYY-MM-DDTHH:MM (e.g. 2026-11-25T11:00). Convert relative times like "
-        "'tomorrow at 11 AM' using the current date."
+        f"ERROR: Invalid time format '{time}'. create_calendar_event requires ISO 8601 with "
+        f"the user's UTC offset: YYYY-MM-DDTHH:MM+HH:MM (e.g. 2026-11-25T11:00{offset}; the "
+        f"user's UTC offset is {offset}). Convert relative times like 'tomorrow at 11 AM' "
+        "using the current date."
+    )
+
+
+def _footer_error(body: str) -> str | None:
+    """Return the outbox-policy error if ``body`` does not end with ``EMAIL_FOOTER``."""
+    if body.rstrip().endswith(EMAIL_FOOTER):
+        return None
+    return (
+        "ERROR: Email rejected by outbox policy: the body must end with the exact line "
+        f"'{EMAIL_FOOTER}'."
     )
 
 
 def _precheck_send_email(args: SendEmailArgs) -> str | None:
-    """Pre-confirmation check for send_email: validate the recipient address."""
-    return _email_error(args.to)
+    """Pre-confirmation check for send_email: recipient address, then outbox policy."""
+    return _email_error(args.to) or _footer_error(args.body)
 
 
 def _precheck_calendar(args: CreateCalendarEventArgs) -> str | None:
@@ -400,7 +421,7 @@ def send_email(to: str, subject: str, body: str) -> str:
 
     Nothing is actually sent.
     """
-    error = _email_error(to)
+    error = _email_error(to) or _footer_error(body)
     if error:
         return error
     recipient = to.strip()
@@ -408,11 +429,14 @@ def send_email(to: str, subject: str, body: str) -> str:
         data_dir() / "sent_emails.json",
         {"to": recipient, "subject": subject, "body": body, "sent_at": _now_iso()},
     )
-    return f"Email saved to outbox (mock, not actually sent): to={recipient}, subject={subject}"
+    return (
+        "Email sent (simulated: recorded in sent_emails.json, no real email is delivered): "
+        f"to={recipient}, subject={subject}"
+    )
 
 
 def create_calendar_event(title: str, time: str) -> str:
-    """Mock calendar: validate the ISO 8601 time and append the event to ``calendar.json``."""
+    """Mock calendar: validate the ISO 8601 time (with UTC offset) and append to ``calendar.json``."""
     error = _time_error(time)
     if error:
         return error
@@ -421,7 +445,7 @@ def create_calendar_event(title: str, time: str) -> str:
         data_dir() / "calendar.json",
         {"title": title, "time": when, "created_at": _now_iso()},
     )
-    return f"Calendar event created (mock): '{title}' at {when}"
+    return f"Calendar event created (simulated, recorded in calendar.json): '{title}' at {when}"
 
 
 def get_user_preference() -> str:

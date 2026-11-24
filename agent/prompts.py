@@ -16,7 +16,7 @@ placeholder can never be re-interpreted as another placeholder.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 NO_LEARNINGS = "(none yet)"
 """Shown under ``## Past Learnings`` when there are no stored lessons."""
@@ -31,7 +31,8 @@ NO_MEMORY = "(no memory saved yet)"
 SYSTEM_PROMPT_TEMPLATE = """You are a helpful self-learning AI agent. You complete the user's task by calling tools, observing the results and then giving a short final answer. After every task you reflect, and the lessons you learn are shown to you below under "Past Learnings".
 
 Current date/time: {now}
-Use this date/time to resolve relative dates such as "today", "tomorrow" or "Friday".
+Upcoming dates (use this list to resolve "tomorrow", "Friday" etc.; do not compute weekdays yourself):
+{dates}
 
 ## User Memory
 {memory}
@@ -45,10 +46,11 @@ Use this date/time to resolve relative dates such as "today", "tomorrow" or "Fri
 5. If a tool fails, read the error message carefully, then fix the arguments as the error says or try a different approach. Never repeat the same failing call with the same arguments.
 6. If the user gives only a contact's name (e.g. "John"), the contact's details may be stored in the user's memory facts. Look them up there first (in User Memory above, or with the tool that returns the saved preferences and facts) before using them. Never pass a bare name where an email address is required.
 7. Draft short, sensible defaults for missing non-critical details (for example an email subject or a brief polite body signed with the user's name). Ask the user only if a critical detail (such as a recipient address) cannot be found.
-8. Respect the user's preferences from User Memory (for example preferred meeting times or email style).
+8. Use the user's preferences from User Memory only to fill in details the task leaves open. Anything the task states explicitly (a time, date, recipient or wording) ALWAYS overrides a stored preference: do exactly what the task says, and if it conflicts with a preference, mention that in one short sentence instead of changing it.
 9. When the user explicitly asks you to remember or save something, store it with save_to_memory.
 10. One tool call at a time is fine. Stop calling tools as soon as the task is done.
-11. Keep the final answer short and factual: say what you did (or why you could not do it)."""
+11. Never claim or promise an action you have not performed. If the task needs a tool, call it now instead of saying you "will" do it. Your final answer may only report what tool results confirm.
+12. Keep the final answer short and factual: say what you did (or why you could not do it)."""
 
 REFLECTION_SYSTEM_PROMPT = """You are the reflection module of a self-learning AI agent. You review one finished task (the task, the final answer, the user's current memory and the step-by-step transcript of tool calls) and answer three questions:
 1. What went well?
@@ -58,14 +60,14 @@ REFLECTION_SYSTEM_PROMPT = """You are the reflection module of a self-learning A
 Reply with ONLY a JSON object (no markdown, no code fences, no extra text) with exactly these keys:
 - "went_well": string, one short sentence.
 - "went_wrong": string, one short sentence ("Nothing" if there were no errors).
-- "lessons": list of 1-3 short, general, reusable rules written as imperatives (e.g. "Look up ... before calling ..."). Base them on errors, retries or declined actions in the transcript; if everything worked, state the approach that worked. Do not mention one-off details such as specific names, dates or message text.
+- "lessons": list of 1-3 short, general, reusable rules written as imperatives (e.g. "Look up ... before calling ..."). Base them on errors, retries or declined actions in the transcript; if everything worked, state the approach that worked. Do not mention one-off details such as specific names, dates or message text. If a tool error revealed a requirement (a format, a policy, a required value), state that requirement itself in the lesson, including the exact required value. Explicit instructions in a task always outrank stored preferences: never write a lesson that tells the agent to change something the user explicitly asked for.
 - "new_preferences": list of preferences the user EXPLICITLY stated in the task (e.g. "likes short emails") that are NOT already in Current memory. Use [] if none. Never guess.
 - "new_facts": list of durable facts the user explicitly stated (e.g. a contact's email address) that are NOT already in Current memory. Use [] if none.
 
 Example of a valid reply:
 {"went_well": "The file was read and summarized.", "went_wrong": "The first call used a wrong filename.", "lessons": ["Use the exact filename listed by the tool when a file is missing."], "new_preferences": [], "new_facts": []}"""
 
-_PLACEHOLDER_RE = re.compile(r"\{(now|memory|learnings)\}")
+_PLACEHOLDER_RE = re.compile(r"\{(now|dates|memory|learnings)\}")
 
 
 def _fill(template: str, values: dict[str, str]) -> str:
@@ -90,6 +92,27 @@ def _fill(template: str, values: dict[str, str]) -> str:
         return values.get(match.group(1), match.group(0))
 
     return _PLACEHOLDER_RE.sub(_replace, template)
+
+
+def format_upcoming_dates(now: datetime, days: int = 7) -> str:
+    """Return a weekday -> date list for today and the next ``days`` days.
+
+    LLMs are unreliable at weekday arithmetic ("Friday" -> which date?), so the
+    prompt gives them a lookup table instead.
+
+    Args:
+        now: The current local date/time.
+        days: How many days after today to list.
+
+    Returns:
+        One line per day, e.g. ``  Wednesday = 2026-11-25 (tomorrow)``.
+    """
+    lines = []
+    for offset in range(days + 1):
+        day = now + timedelta(days=offset)
+        label = " (today)" if offset == 0 else " (tomorrow)" if offset == 1 else ""
+        lines.append(f"  {day.strftime('%A')} = {day.strftime('%Y-%m-%d')}{label}")
+    return "\n".join(lines)
 
 
 def build_system_prompt(memory_text: str, learnings_text: str, now: datetime) -> str:
@@ -117,6 +140,7 @@ def build_system_prompt(memory_text: str, learnings_text: str, now: datetime) ->
         SYSTEM_PROMPT_TEMPLATE,
         {
             "now": now.strftime("%Y-%m-%dT%H:%M (%A)"),
+            "dates": format_upcoming_dates(now),
             "memory": memory,
             "learnings": learnings,
         },

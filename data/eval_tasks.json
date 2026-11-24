@@ -2,51 +2,99 @@
   {
     "id": 1,
     "task": "What is my name?",
-    "checks": {"answer_contains": ["Jewel"], "max_tool_errors": 0}
+    "checks": {
+      "answer_contains": [
+        "Jewel"
+      ],
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 2,
     "task": "Save that I like green tea",
-    "checks": {"memory_contains": ["green tea"], "max_tool_errors": 0}
+    "checks": {
+      "memory_contains": [
+        "green tea"
+      ],
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 3,
     "task": "Send an email to test@test.com saying hello",
-    "checks": {"email_sent_to": "test@test.com", "max_tool_errors": 0}
+    "checks": {
+      "email_sent_to": "test@test.com",
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 4,
     "task": "Send email to John about meeting tomorrow at 11 AM",
-    "checks": {"email_sent_to": "john@example.com", "max_tool_errors": 0}
+    "checks": {
+      "email_sent_to": "john@example.com",
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 5,
     "task": "Email Sarah about the project update",
-    "checks": {"email_sent_to": "sarah@example.com", "max_tool_errors": 0}
+    "checks": {
+      "email_sent_to": "sarah@example.com",
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 6,
     "task": "Create a calendar event called Standup tomorrow at 9 AM",
-    "checks": {"calendar_title": "Standup", "calendar_time_contains": "T09:00", "max_tool_errors": 0}
+    "checks": {
+      "calendar_title": "Standup",
+      "calendar_date": "tomorrow",
+      "calendar_time_contains": "T09:00",
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 7,
     "task": "Schedule a meeting titled Design Review on Friday at 3 PM",
-    "checks": {"calendar_title": "Design Review", "calendar_time_contains": "T15:00", "max_tool_errors": 0}
+    "checks": {
+      "calendar_title": "Design Review",
+      "calendar_date": "friday",
+      "calendar_time_contains": "T15:00",
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 8,
     "task": "Read the file notes.txt and summarize it",
-    "checks": {"answer_contains": ["kickoff"], "max_tool_errors": 0}
+    "checks": {
+      "answer_contains": [
+        "kickoff"
+      ],
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 9,
     "task": "Write a file called ideas.txt with the content Build a self-learning agent",
-    "checks": {"file_contains": {"path": "ideas.txt", "text": "self-learning"}, "max_tool_errors": 0}
+    "checks": {
+      "file_contains": {
+        "path": "ideas.txt",
+        "text": "self-learning"
+      },
+      "max_tool_errors": 0
+    }
   },
   {
     "id": 10,
     "task": "Search the web for Python 3.11 new features",
-    "checks": {"tools_used_include": ["search_web"], "answer_contains": ["Python"], "max_tool_errors": 0}
+    "checks": {
+      "tools_used_include": [
+        "search_web"
+      ],
+      "answer_contains": [
+        "Python"
+      ],
+      "max_tool_errors": 0
+    }
   }
 ]

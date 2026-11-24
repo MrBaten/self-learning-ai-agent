@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, field_validator
 
 from agent.config import data_dir
-from agent.llm import LLMClient, LLMError
+from agent.llm import LESSON_FOOTER, LESSON_ISO, LLMClient, LLMError, lesson_iso
 from agent.memory import add_fact, add_preference, format_memory_for_prompt, load_memory
 from agent.prompts import REFLECTION_SYSTEM_PROMPT, build_reflection_user_prompt
 
@@ -35,9 +35,8 @@ MAX_TITLE_CHARS = 60
 MAX_OBSERVATION_CHARS = 300
 DEFAULT_LESSON = "Review the task outcome and keep the approach that worked."
 
-LESSON_ISO_8601 = (
-    "Convert natural-language times to ISO 8601 (YYYY-MM-DDTHH:MM) before calling create_calendar_event."
-)
+LESSON_ISO_8601 = LESSON_ISO  # generic form; lesson_iso(error_text) names the actual UTC offset
+LESSON_EMAIL_FOOTER = LESSON_FOOTER
 LESSON_EMAIL_LOOKUP = (
     "When only a contact name is given, call get_user_preference first to look up their "
     "email address before calling send_email."
@@ -247,8 +246,11 @@ def _heuristic_reflection(task: str, transcript: str) -> Reflection:
     tools = [m.group(1) for line in lines if (m := _STEP_TOOL_RE.match(line))]
 
     lessons: list[str] = []
-    if any("ISO 8601" in line for line in error_lines):
-        lessons.append(LESSON_ISO_8601)
+    iso_errors = [line for line in error_lines if "ISO 8601" in line]
+    if iso_errors:
+        lessons.append(lesson_iso(iso_errors[0]))
+    if any("outbox policy" in line for line in error_lines):
+        lessons.append(LESSON_EMAIL_FOOTER)
     if any("is not a valid email address" in line for line in error_lines):
         lessons.append(LESSON_EMAIL_LOOKUP)
     if any("File not found" in line for line in error_lines):

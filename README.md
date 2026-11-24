@@ -73,6 +73,14 @@ python agent/main.py --task "Send email to John about meeting tomorrow at 11 AM"
 
 Switch the provider with `LLM_PROVIDER=openai|groq|mock` in `.env`, or with `--provider`. With no key set, the agent falls back to the **offline mock**.
 
+Any OpenAI-compatible service works through `OPENAI_BASE_URL`. For example, OpenRouter:
+```bash
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-or-...            # your OpenRouter key
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_MODEL=openai/gpt-4o-mini
+```
+
 ```bash
 python agent/main.py --task "What is my name?"
 python agent/main.py --task "Save that I like tea"
@@ -114,16 +122,34 @@ Steps: 3 | Tool calls: 2 | Tool errors: 0
 
 **Eval (`--eval`, mock provider):**
 ```
-Run 1 (without learnings): 6/10 passed
+Run 1 (without learnings): 5/10 passed
 Run 2 (with learnings): 10/10 passed
-Improvement: +4
+Improvement: +5
 ```
-A task passes only if it produces the right outcome **with zero tool errors**. Run 1 recovers from its mistakes but still makes them. Run 2 avoids them because of the lessons. Two hidden constraints are learned this way. `create_calendar_event` only accepts ISO-8601 times, and its schema deliberately doesn't say so. `send_email` needs a real address, but contacts are stored in memory facts.
+A task passes only if it produces the right outcome (right recipient, right title, right **date** and time) **with zero tool errors**. Run 1 recovers from its mistakes but still makes them. Run 2 avoids them because of the lessons.
+
+The eval environment has rules that the tool schemas deliberately don't reveal. An agent can only learn them from the error messages:
+- `create_calendar_event` needs ISO 8601 **with the user's UTC offset** (e.g. `2026-11-25T09:00+06:00`).
+- The outbox rejects any email whose body doesn't end with the line `-- Sent via AI assistant`.
+- `send_email` needs a real address, and contacts live in memory facts.
+
+This is a designed test environment. In real systems, "undocumented requirement → error → remember it" is exactly the kind of thing an agent should learn.
 
 ### ⚠️ Honest notes on the mock and real LLMs
 - The **mock provider is a rule-based simulation**. It reads the Past Learnings section and changes its plan when it finds a relevant lesson. That makes the learning loop testable offline and deterministic, but the mock's "intelligence" is scripted. The 6/10 → 10/10 result proves that the **plumbing** works: reflection → `learnings.md` → prompt injection → changed behaviour. It does not show how much a real model improves.
-- With **gpt-4o-mini or Llama-3.3-70B** the same code runs unchanged, but the score gain is **not guaranteed**. A strong model may guess the ISO format on the first try, so run 1 and run 2 can tie. Real-LLM results vary from run to run.
-- The real OpenAI SDK path is covered by `test.sh` against a local OpenAI-compatible server (`tests/fake_openai_server.py`). It was **not** run against the live OpenAI/Groq APIs in this build, because no key or network access was available.
+- With a real model the score gain is **not guaranteed**, and results vary from run to run.
+
+### Real-LLM run #1 (GPT-4o-mini via OpenRouter, 2026-11-24): what it taught me
+The first version of the eval scored **9/10 → 9/10 (improvement 0)** with a real model. The model was simply too good for the original traps: it read contact emails straight from the memory in its prompt, and it guessed the ISO time format on its first try. So run 1 made no errors and there was nothing to learn. The run also exposed four real bugs, all fixed since:
+
+| Bug seen with the real model | Fix |
+|---|---|
+| "Design Review on **Friday**" was booked on **Wednesday**, and the eval passed it because it only checked the hour | The prompt now includes a weekday → date table; the eval checks the full date |
+| User asked for **9 AM**; the agent booked **10 AM** "because you prefer meetings after 10 AM" | Rule: explicit task details always override stored preferences (mention the conflict, don't change it) |
+| Reflection then learned the *wrong* lesson ("always confirm user preferences before scheduling") | Reflection prompt: never write a lesson that overrides what the user explicitly asked |
+| The agent answered "I will proceed to create the event" without calling a tool, and it counted as success | The loop detects promised-but-not-done actions and pushes the model back to act (once) |
+
+The eval was then made harder with the discoverable rules above. Real-LLM run #2 is pending, and its numbers will be added here.
 
 ---
 
@@ -139,8 +165,9 @@ A task passes only if it produces the right outcome **with zero tool errors**. R
 6. `--eval` → 10 tasks × 2 runs, prints scores, run 2 > run 1, no crash
 7. No API keys in code (regex scan), keys only from `.env`
 8. Real `openai` SDK tool-calling loop against a local OpenAI-compatible server
+9. Regression checks for the real-LLM bugs: false-success nudge, weekday table, explicit-beats-preference rule, UTC-offset and footer rules
 
-Current result: **18/18 checks pass**.
+Current result: **19/19 checks pass** on Python 3.9 and 3.13.
 
 ---
 
@@ -160,4 +187,5 @@ Current result: **18/18 checks pass**.
 - **Evaluation needs a strict definition of success.** Checking only the outcome hides learning, because agents usually recover from errors anyway. Counting tool errors and steps makes the improvement visible.
 - **Safety belongs in the tool layer.** Prompts are suggestions. Confirmation gates, path sandboxing and `.env` blocking are guarantees.
 - **Keep the LLM behind one small interface** (`chat(messages, tools, json_mode)`). That's what made OpenAI ↔ Groq ↔ offline mock a one-line switch and made the whole system testable without an API key.
-- **Learned memory can go stale or wrong.** A bad lesson is injected into every future prompt, so lessons need review, dedupe and a cap.
+- **Learned memory can go stale or wrong.** A bad lesson is injected into every future prompt, so lessons need review, dedupe and a cap. I saw this happen for real: a prompt rule conflict made the agent learn "follow preferences over instructions".
+- **A mock proves plumbing, not intelligence.** The deterministic mock showed 6/10 → 10/10 while the real model showed 9/10 → 9/10 on the same eval. Test with a real model before claiming a result.

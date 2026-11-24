@@ -9,6 +9,7 @@ step budget is exhausted, or the LLM provider fails.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any, Callable, Literal
 
@@ -30,6 +31,18 @@ REPEATED_CALL_TEMPLATE = (
 )
 MAX_STEPS_TEMPLATE = "Stopped: reached the maximum of {n} steps without a final answer."
 NO_ANSWER = "(no answer)"
+# A "final answer" that only promises an action ("I will proceed to create the event")
+# without calling a tool is a false success. The loop pushes back once.
+PROMISE_RE = re.compile(
+    r"\b(?:I(?:'ll| will| am going to| shall)|let me)\s+(?:now\s+)?(?:go ahead and\s+|proceed to\s+)?"
+    r"(?:proceed|create|send|schedule|save|write|book|set up|add|look up|search|read)\b",
+    re.IGNORECASE,
+)
+PROMISE_NUDGE = (
+    "[agent note] Your reply says you will do something, but you did not call any tool, so "
+    "nothing was done. If the task needs an action, call the tool now. Otherwise give a final "
+    "answer that reports only what was actually done."
+)
 SHORT_TERM_MAX_MESSAGES = 20
 _EVENT_PREVIEW_CHARS = 200
 
@@ -221,6 +234,7 @@ class Agent:
 
         final_answer: str | None = None
         stopped_reason: Literal["final_answer", "max_steps", "llm_error"] = "max_steps"
+        promise_nudged = False
 
         for step_number in range(1, self.max_steps + 1):
             self._emit(f"Step {step_number}: thinking…")
@@ -237,6 +251,11 @@ class Agent:
             if not response.tool_calls:
                 answer = (response.content or "").strip() or NO_ANSWER
                 record({"role": "assistant", "content": answer})
+                if not promise_nudged and PROMISE_RE.search(answer):
+                    promise_nudged = True
+                    record({"role": "user", "content": PROMISE_NUDGE})
+                    self._emit("Answer promised an action without calling a tool; asking the model to act.")
+                    continue
                 steps.append(AgentStep(step=step_number, observation=answer, status="final"))
                 final_answer = answer
                 stopped_reason = "final_answer"

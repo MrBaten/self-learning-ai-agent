@@ -83,6 +83,7 @@ import contextlib  # noqa: E402
 import json  # noqa: E402
 import shutil  # noqa: E402
 import tempfile  # noqa: E402
+from datetime import date, datetime, timedelta  # noqa: E402
 from collections.abc import Callable, Iterator  # noqa: E402
 from typing import Any, TextIO  # noqa: E402
 
@@ -107,6 +108,7 @@ KNOWN_CHECKS = frozenset(
         "email_sent_to",
         "calendar_title",
         "calendar_time_contains",
+        "calendar_date",
         "file_contains",
         "tools_used_include",
         "max_tool_errors",
@@ -411,6 +413,33 @@ def _read_json_list(path: Path) -> tuple[list[dict[str, Any]], str | None]:
     return [item for item in data if isinstance(item, dict)], None
 
 
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def resolve_relative_date(word: str, today: date) -> str | None:
+    """Resolve "today", "tomorrow" or a weekday name to an ISO date string.
+
+    Weekday names mean the next occurrence strictly after today, matching how the
+    tasks are phrased ("on Friday").
+
+    Args:
+        word: The relative date word from the eval task spec.
+        today: The date to resolve against.
+
+    Returns:
+        ``YYYY-MM-DD``, or None if the word is not recognised.
+    """
+    key = word.strip().lower()
+    if key == "today":
+        return today.isoformat()
+    if key == "tomorrow":
+        return (today + timedelta(days=1)).isoformat()
+    if key in _WEEKDAYS:
+        ahead = (_WEEKDAYS.index(key) - today.weekday()) % 7 or 7
+        return (today + timedelta(days=ahead)).isoformat()
+    return None
+
+
 def evaluate_task(task_spec: dict[str, Any], result: AgentResult, data_dir: Path) -> tuple[bool, list[str]]:
     """Check an agent result (and the files it produced) against an eval task's checks.
 
@@ -463,7 +492,7 @@ def evaluate_task(task_spec: dict[str, Any], result: AgentResult, data_dir: Path
             sent = ", ".join(str(e.get("to", "")) for e in emails) or "none"
             reasons.append(f"no email sent to '{expected}' (sent to: {sent})")
 
-    if "calendar_title" in checks or "calendar_time_contains" in checks:
+    if any(k in checks for k in ("calendar_title", "calendar_time_contains", "calendar_date")):
         events, problem = _read_json_list(data_dir / "calendar.json")
         title = str(checks.get("calendar_title", "")).lower()
         matching = [e for e in events if title in str(e.get("title", "")).lower()]
@@ -477,6 +506,13 @@ def evaluate_task(task_spec: dict[str, Any], result: AgentResult, data_dir: Path
             if not any(wanted in str(e.get("time", "")).lower() for e in matching):
                 times = ", ".join(str(e.get("time", "")) for e in matching)
                 reasons.append(f"calendar event time does not contain '{checks['calendar_time_contains']}' (got: {times})")
+        if matching and "calendar_date" in checks:
+            expected_date = resolve_relative_date(str(checks["calendar_date"]), datetime.now().date())
+            if expected_date is None:
+                reasons.append(f"unknown calendar_date value '{checks['calendar_date']}'")
+            elif not any(str(e.get("time", "")).startswith(expected_date) for e in matching):
+                times = ", ".join(str(e.get("time", "")) for e in matching)
+                reasons.append(f"calendar event is not on {checks['calendar_date']} = {expected_date} (got: {times})")
 
     if "file_contains" in checks:
         spec = checks["file_contains"] or {}

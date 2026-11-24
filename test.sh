@@ -127,6 +127,46 @@ assert any((r["response_format"] or {}).get("type")=="json_object" and not r["ha
 ' "$REQ_LOG" 2>/dev/null; then ok "SDK sent tools+tool_choice for the agent loop and json_object for reflection"; else bad "unexpected SDK requests"; fi
 kill "$SERVER_PID" 2>/dev/null; SERVER_PID=""
 
+echo "== 9. Guards found by the real-LLM run =="
+fresh_data_dir t9
+if $PY - <<'PYEOF' 2>&1; then ok "false-success nudge, weekday table, offset + footer rules, explicit-beats-preference rule"; else bad "guard checks failed"; fi
+import json, sys
+from datetime import datetime
+sys.path.insert(0, ".")
+from agent.agent import Agent
+from agent.llm import LLMResponse, ToolCall
+from agent.prompts import build_system_prompt
+from agent.tools import execute_tool
+
+class Scripted:
+    """Promises an action first, then actually calls the tool after the nudge."""
+    provider, model = "scripted", "scripted"
+    def __init__(self): self.calls = 0
+    def chat(self, messages, tools=None, json_mode=False):
+        self.calls += 1
+        if self.calls == 1:
+            return LLMResponse(content="I will proceed to create the calendar event.")
+        if self.calls == 2:
+            assert "did not call any tool" in messages[-1]["content"]
+            return LLMResponse(tool_calls=[ToolCall(id="c1", name="get_user_preference", arguments="{}")])
+        return LLMResponse(content="Done.")
+
+r = Agent(llm=Scripted(), confirm=lambda n, a: True, use_learnings=False).run("Create an event")
+assert r.tools_used == ["get_user_preference"] and r.final_answer == "Done.", r
+
+prompt = build_system_prompt("User name: X", "", datetime(2026, 11, 24, 13, 0))
+assert "Friday = 2026-11-27" in prompt and "ALWAYS overrides a stored preference" in prompt
+
+bad_time = execute_tool("create_calendar_event", {"title": "T", "time": "2026-11-25T09:00"}, lambda n, a: True)
+assert bad_time.status == "error" and "UTC offset" in bad_time.output, bad_time
+good_time = execute_tool("create_calendar_event", {"title": "T", "time": "2026-11-25T09:00+06:00"}, lambda n, a: True)
+assert good_time.status == "ok", good_time
+no_footer = execute_tool("send_email", {"to": "a@b.co", "subject": "s", "body": "hi"}, lambda n, a: True)
+assert no_footer.status == "error" and "outbox policy" in no_footer.output, no_footer
+footer = execute_tool("send_email", {"to": "a@b.co", "subject": "s", "body": "hi\n\n-- Sent via AI assistant"}, lambda n, a: True)
+assert footer.status == "ok" and "simulated" in footer.output, footer
+PYEOF
+
 echo
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

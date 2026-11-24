@@ -269,7 +269,21 @@ FALLBACK_ANSWER = (
     "I can help with email, calendar events, files, web search and your memory. "
     "Could you rephrase your request?"
 )
-LESSON_ISO = "Convert natural-language times to ISO 8601 (YYYY-MM-DDTHH:MM) before calling create_calendar_event."
+LESSON_ISO_TEMPLATE = (
+    "Calendar times must be ISO 8601 with the user's UTC offset (YYYY-MM-DDTHH:MM{offset}); "
+    "convert relative times before calling create_calendar_event."
+)
+LESSON_ISO = LESSON_ISO_TEMPLATE.format(offset="+HH:MM")
+EMAIL_FOOTER_LINE = "-- Sent via AI assistant"
+LESSON_FOOTER = f"End every email body with the exact line '{EMAIL_FOOTER_LINE}' (outbox policy)."
+_OFFSET_RE = re.compile(r"[+-]\d{2}:\d{2}")
+_FOOTER_ERR_RE = re.compile(r"exact line '([^']+)'")
+
+
+def lesson_iso(error_text: str = "") -> str:
+    """Return the calendar-time lesson, naming the UTC offset found in ``error_text`` if any."""
+    match = re.search(r"UTC offset is ([+-]\d{2}:\d{2})", error_text)
+    return LESSON_ISO_TEMPLATE.format(offset=match.group(1) if match else "+HH:MM")
 LESSON_EMAIL = (
     "When only a contact name is given, call get_user_preference first to look up their email "
     "address before calling send_email."
@@ -654,6 +668,12 @@ def _policy_email(ctx: _Context) -> _Decision:
     name = None if address else _email_recipient_name(task)
     subject, body = _email_subject_and_body(task, name or "there", ctx.user_name)
 
+    footer_known = _has_lesson(ctx, "Sent via AI assistant") or any(
+        s.name == "send_email" and "outbox policy" in s.observation for s in ctx.history
+    )
+    if footer_known:
+        body = f"{body}\n\n{EMAIL_FOOTER_LINE}"
+
     def send(to: str, thought: str) -> _Decision:
         """Build the send_email call for ``to``."""
         return _call("send_email", {"to": to, "subject": subject, "body": body}, thought)
@@ -679,6 +699,14 @@ def _policy_email(ctx: _Context) -> _Decision:
             return _final(f"Email sent to {to} with subject '{last.args.get('subject', subject)}'.")
         if last.status == "cancelled":
             return _final("Okay — I did not send the email.")
+        if "outbox policy" in last.observation:
+            footer = _FOOTER_ERR_RE.search(last.observation)
+            already = sum(1 for s in ctx.history if s.name == "send_email" and "outbox policy" in s.observation)
+            if footer and already == 1 and EMAIL_FOOTER_LINE in footer.group(1):
+                return send(
+                    to,
+                    f"The outbox requires the body to end with '{footer.group(1)}'. Adding it and resending.",
+                )
         looked_up = any(s.name == "get_user_preference" for s in ctx.history)
         if "is not a valid email address" in last.observation and not looked_up and (name or to):
             return _call(
@@ -730,14 +758,30 @@ def _calendar_title_and_phrase(task: str) -> tuple[str, str]:
 def _policy_calendar(ctx: _Context) -> _Decision:
     """Create a calendar event, converting the time to ISO 8601 (up front if a lesson says so)."""
     title, phrase = _calendar_title_and_phrase(ctx.task)
-    iso = parse_natural_time(phrase, ctx.now)
+    base_iso = parse_natural_time(phrase, ctx.now)
+    lesson_offset = next(
+        (m.group(0) for line in ctx.learnings if "ISO 8601" in line for m in [_OFFSET_RE.search(line)] if m),
+        None,
+    )
+    error_offset = next(
+        (
+            m.group(1)
+            for st in ctx.history
+            if st.name == "create_calendar_event"
+            for m in [re.search(r"UTC offset is ([+-]\d{2}:\d{2})", st.observation)]
+            if m
+        ),
+        None,
+    )
+    offset = error_offset or lesson_offset
+    iso = f"{base_iso}{offset}" if base_iso and offset else base_iso
     last = _last(ctx)
     if last is None:
         if _has_lesson(ctx, "ISO 8601") and iso:
             return _call(
                 "create_calendar_event",
                 {"title": title, "time": iso},
-                f"Past Learnings say to convert times to ISO 8601 first: '{phrase}' -> {iso}.",
+                f"Past Learnings say calendar times need ISO 8601 with the UTC offset: '{phrase}' -> {iso}.",
             )
         return _call(
             "create_calendar_event",
@@ -754,7 +798,7 @@ def _policy_calendar(ctx: _Context) -> _Decision:
             return _call(
                 "create_calendar_event",
                 {"title": title, "time": iso},
-                f"The tool needs ISO 8601. Converting '{phrase}' to {iso} and retrying.",
+                f"The tool needs ISO 8601 with the UTC offset. Converting '{phrase}' to {iso} and retrying.",
             )
     return _could_not_complete(last) if last.status == "error" else _final(FALLBACK_ANSWER)
 
@@ -963,7 +1007,9 @@ def _reflection_json(messages: list[dict[str, Any]]) -> str:
 
     for err in errors:
         if "ISO 8601" in err:
-            add(LESSON_ISO)
+            add(lesson_iso(err))
+        if "outbox policy" in err:
+            add(LESSON_FOOTER)
         if "is not a valid email address" in err:
             add(LESSON_EMAIL)
         if "File not found" in err:
