@@ -1,0 +1,4 @@
+Project kickoff notes
+- Goal: ship the self-learning agent MVP for the Q1 launch
+- Owners: Jewel (agent loop), John (tools), Sarah (evaluation)
+- Next meeting: Thursday after 10 AM

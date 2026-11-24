@@ -1,0 +1,11 @@
+{
+  "user_name": "Jewel",
+  "preferences": [
+    "prefers meetings after 10 AM",
+    "likes short emails"
+  ],
+  "facts": [
+    "John's email is john@example.com",
+    "Sarah's email is sarah@example.com"
+  ]
+}

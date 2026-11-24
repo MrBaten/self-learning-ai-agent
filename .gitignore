@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+# runtime data (keep seed/example files only)
+data/*.json
+!data/eval_tasks.json
+!data/*.example.json
+data/*.bak
