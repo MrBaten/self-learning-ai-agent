@@ -19,25 +19,32 @@ import sys
 from pathlib import Path
 
 
-MIN_PYTHON = (3, 10)
+MIN_PYTHON = (3, 9)
 
 
 def _check_python_version() -> None:
-    """Exit with a clear, actionable message on Python versions that are too old.
+    """Exit with a clear, actionable message when the interpreter can't run the agent.
 
-    The code base uses ``X | None`` annotations, which pydantic cannot evaluate
-    before Python 3.10 (macOS ships Python 3.9 with the Command Line Tools).
+    Python 3.11+ is recommended. Python 3.9 (the macOS system Python) works only
+    with the ``eval_type_backport`` package, which lets pydantic evaluate the
+    ``X | None`` annotations used throughout the code base.
     """
+    found = ".".join(str(part) for part in sys.version_info[:3])
+    fix = "fix: pip install -r requirements.txt  (or use Python 3.11+: brew install python@3.12)\n"
     if sys.version_info < MIN_PYTHON:
-        found = ".".join(str(part) for part in sys.version_info[:3])
         sys.stderr.write(
-            f"error: Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ is required "
-            f"(3.11+ recommended), but this is Python {found} ({sys.executable}).\n"
-            "fix (macOS): brew install python@3.12, then recreate the venv:\n"
-            "  rm -rf .venv && python3.12 -m venv .venv && source .venv/bin/activate "
-            "&& pip install -r requirements.txt\n"
+            f"error: Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ is required (3.11+ recommended), "
+            f"but this is Python {found} ({sys.executable}).\n" + fix
         )
         raise SystemExit(2)
+    if sys.version_info < (3, 10):
+        try:
+            import eval_type_backport  # noqa: F401
+        except ImportError:
+            sys.stderr.write(
+                f"error: on Python {found} the 'eval_type_backport' package is required.\n" + fix
+            )
+            raise SystemExit(2)
 
 
 _check_python_version()

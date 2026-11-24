@@ -69,13 +69,7 @@ cp .env.example .env          # add OPENAI_API_KEY or GROQ_API_KEY
 python agent/main.py --task "Send email to John about meeting tomorrow at 11 AM"
 ```
 
-**Python 3.10+ is required (3.11+ recommended).** On macOS, the `python3` that comes with the Command Line Tools is 3.9, which fails with `Unable to evaluate type annotation 'str | None'`. Install a newer one first:
-
-```bash
-brew install python@3.12
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-```
+**Python 3.11+ is recommended; 3.9+ works.** On macOS the built-in `python3` (Command Line Tools) is 3.9. `requirements.txt` then installs the small `eval_type_backport` package automatically, which lets pydantic read the `str | None` type hints. To use a newer Python instead: `brew install python@3.12 && python3.12 -m venv .venv`.
 
 Switch the provider with `LLM_PROVIDER=openai|groq|mock` in `.env`, or with `--provider`. With no key set, the agent falls back to the **offline mock**.
 
@@ -151,6 +145,7 @@ Current result: **18/18 checks pass**.
 ---
 
 ## Design choices beyond the brief
+- **One conditional extra dependency:** `eval_type_backport` installs only on Python < 3.10 (the macOS system Python). On 3.10+ the dependencies are exactly `openai`, `pydantic` and `python-dotenv`.
 - **7th tool `save_to_memory`**, so "Save that I like tea" is an explicit and reliable action. Reflection *also* picks up preferences the user stated.
 - **Confirmation is enforced in code.** `send_email` and `create_calendar_event` call a confirm callback before any side effect, so a model that "forgets" to ask can't bypass it.
 - **Repeated identical failing calls are blocked.** The loop also appends a "re-plan" note to every error, which implements "don't repeat the same error" at runtime as well as in the prompt.

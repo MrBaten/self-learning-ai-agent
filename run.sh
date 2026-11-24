@@ -8,9 +8,9 @@ cd "$(dirname "$0")"
 if [ -n "${PYTHON:-}" ]; then PY="$PYTHON"
 elif [ -x .venv/bin/python ]; then PY=".venv/bin/python"
 else PY="python3"; fi
-if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-  echo "error: $PY is Python $("$PY" -c 'import platform; print(platform.python_version())' 2>/dev/null || echo '?'); Python 3.10+ is required (3.11+ recommended)." >&2
-  echo "fix (macOS): brew install python@3.12 && rm -rf .venv && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
+  echo "error: $PY is Python $("$PY" -c 'import platform; print(platform.python_version())' 2>/dev/null || echo '?'); Python 3.9+ is required (3.11+ recommended)." >&2
+  echo "fix (macOS): brew install python@3.12 && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
   exit 2
 fi
 if [ ! -f .env ] && [ -f .env.example ]; then
