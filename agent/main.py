@@ -19,6 +19,30 @@ import sys
 from pathlib import Path
 
 
+MIN_PYTHON = (3, 10)
+
+
+def _check_python_version() -> None:
+    """Exit with a clear, actionable message on Python versions that are too old.
+
+    The code base uses ``X | None`` annotations, which pydantic cannot evaluate
+    before Python 3.10 (macOS ships Python 3.9 with the Command Line Tools).
+    """
+    if sys.version_info < MIN_PYTHON:
+        found = ".".join(str(part) for part in sys.version_info[:3])
+        sys.stderr.write(
+            f"error: Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ is required "
+            f"(3.11+ recommended), but this is Python {found} ({sys.executable}).\n"
+            "fix (macOS): brew install python@3.12, then recreate the venv:\n"
+            "  rm -rf .venv && python3.12 -m venv .venv && source .venv/bin/activate "
+            "&& pip install -r requirements.txt\n"
+        )
+        raise SystemExit(2)
+
+
+_check_python_version()
+
+
 def _fix_sys_path() -> Path:
     """Make ``python agent/main.py`` import the ``agent`` package correctly.
 

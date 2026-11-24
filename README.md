@@ -69,6 +69,14 @@ cp .env.example .env          # add OPENAI_API_KEY or GROQ_API_KEY
 python agent/main.py --task "Send email to John about meeting tomorrow at 11 AM"
 ```
 
+**Python 3.10+ is required (3.11+ recommended).** On macOS, the `python3` that comes with the Command Line Tools is 3.9, which fails with `Unable to evaluate type annotation 'str | None'`. Install a newer one first:
+
+```bash
+brew install python@3.12
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
 Switch the provider with `LLM_PROVIDER=openai|groq|mock` in `.env`, or with `--provider`. With no key set, the agent falls back to the **offline mock**.
 
 ```bash
