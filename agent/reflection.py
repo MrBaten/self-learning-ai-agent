@@ -161,7 +161,8 @@ def append_learnings(task: str, lessons: list[str], when: date | None = None) ->
 
     Lessons already present in the file (case-insensitive) or repeated within
     ``lessons`` are skipped. Creates the file with the ``# Agent Learnings``
-    header if it is missing or empty.
+    header if it is missing or empty. The generic ``DEFAULT_LESSON`` filler is
+    never persisted: it teaches nothing and would only add noise to every prompt.
     """
     existing = {lesson.casefold() for lesson in load_lessons()}
     to_add: list[str] = []
@@ -170,7 +171,7 @@ def append_learnings(task: str, lessons: list[str], when: date | None = None) ->
         if lesson.startswith(LESSON_PREFIX.strip()):
             lesson = lesson[len(LESSON_PREFIX.strip()):].strip()
         key = lesson.casefold()
-        if not lesson or key in existing:
+        if not lesson or key in existing or key == DEFAULT_LESSON.casefold():
             continue
         existing.add(key)
         to_add.append(lesson)

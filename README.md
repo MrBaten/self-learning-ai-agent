@@ -149,7 +149,16 @@ The first version of the eval scored **9/10 → 9/10 (improvement 0)** with a re
 | Reflection then learned the *wrong* lesson ("always confirm user preferences before scheduling") | Reflection prompt: never write a lesson that overrides what the user explicitly asked |
 | The agent answered "I will proceed to create the event" without calling a tool, and it counted as success | The loop detects promised-but-not-done actions and pushes the model back to act (once) |
 
-The eval was then made harder with the discoverable rules above. Real-LLM run #2 is pending, and its numbers will be added here.
+The eval was then made harder with the discoverable rules above.
+
+### Real-LLM run #2 (same model, harder eval): 5/10 -> 8/10, but read the details
+- **Real learning, clearly visible:** in run 1, all three email tasks hit the outbox-footer rule, recovered, and reflection wrote the lesson. In run 2 all three were correct on the first try.
+- **One "pass" was wrong:** the calendar lesson made the model add a timezone, but it picked `Z` (UTC). That booked "3 PM" as 9 PM local, and my check (only `T15:00`) passed it. Fixed: the tool now requires the user's own UTC offset, and the eval compares the **local** date and time.
+- **The explicit-vs-preference bug survived the prompt fix.** The model asked "would you like 10 AM instead?" rather than booking the requested 9 AM, and reflection again learned "check preferences first". Fixed harder: the memory block itself now labels preferences as *defaults only*, the rule has a worked example, and the reflection prompt counts asking-instead-of-doing as a mistake.
+- **One fail was my check, not the agent:** a correct summary of `notes.txt` didn't use the exact word "kickoff". The check now accepts any of several key terms.
+- Reflection no longer saves its generic filler lesson to `learnings.md`.
+
+So the corrected reading of run #2 is about **5/10 -> 7/10**. Run #3 with these fixes is pending.
 
 ---
 

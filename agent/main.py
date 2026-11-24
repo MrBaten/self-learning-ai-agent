@@ -104,6 +104,8 @@ DATA_DIR_ENV = "AGENT_DATA_DIR"
 KNOWN_CHECKS = frozenset(
     {
         "answer_contains",
+        "answer_contains_any",
+        "calendar_local_time",
         "memory_contains",
         "email_sent_to",
         "calendar_title",
@@ -413,6 +415,21 @@ def _read_json_list(path: Path) -> tuple[list[dict[str, Any]], str | None]:
     return [item for item in data if isinstance(item, dict)], None
 
 
+def _local_event_time(event: dict[str, Any], fmt: str) -> str | None:
+    """Format an event's ``time`` in this machine's local timezone, or None if unparsable.
+
+    Times with an offset (``+06:00`` or ``Z``) are converted to local time, so
+    ``15:00Z`` is not mistaken for 3 PM local. Naive times are taken as local.
+    """
+    try:
+        parsed = datetime.fromisoformat(str(event.get("time", "")).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone()
+    return parsed.strftime(fmt)
+
+
 _WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
 
@@ -471,6 +488,9 @@ def evaluate_task(task_spec: dict[str, Any], result: AgentResult, data_dir: Path
     for needle in _as_str_list(checks.get("answer_contains")):
         if needle.lower() not in answer:
             reasons.append(f"final answer does not contain '{needle}'")
+    any_needles = _as_str_list(checks.get("answer_contains_any"))
+    if any_needles and not any(n.lower() in answer for n in any_needles):
+        reasons.append(f"final answer contains none of {any_needles}")
 
     memory_needles = _as_str_list(checks.get("memory_contains"))
     if memory_needles:
@@ -492,7 +512,7 @@ def evaluate_task(task_spec: dict[str, Any], result: AgentResult, data_dir: Path
             sent = ", ".join(str(e.get("to", "")) for e in emails) or "none"
             reasons.append(f"no email sent to '{expected}' (sent to: {sent})")
 
-    if any(k in checks for k in ("calendar_title", "calendar_time_contains", "calendar_date")):
+    if any(k in checks for k in ("calendar_title", "calendar_time_contains", "calendar_date", "calendar_local_time")):
         events, problem = _read_json_list(data_dir / "calendar.json")
         title = str(checks.get("calendar_title", "")).lower()
         matching = [e for e in events if title in str(e.get("title", "")).lower()]
@@ -510,9 +530,14 @@ def evaluate_task(task_spec: dict[str, Any], result: AgentResult, data_dir: Path
             expected_date = resolve_relative_date(str(checks["calendar_date"]), datetime.now().date())
             if expected_date is None:
                 reasons.append(f"unknown calendar_date value '{checks['calendar_date']}'")
-            elif not any(str(e.get("time", "")).startswith(expected_date) for e in matching):
+            elif not any(_local_event_time(e, "%Y-%m-%d") == expected_date for e in matching):
                 times = ", ".join(str(e.get("time", "")) for e in matching)
-                reasons.append(f"calendar event is not on {checks['calendar_date']} = {expected_date} (got: {times})")
+                reasons.append(f"calendar event is not on {checks['calendar_date']} = {expected_date} local time (got: {times})")
+        if matching and "calendar_local_time" in checks:
+            wanted_time = str(checks["calendar_local_time"])
+            if not any(_local_event_time(e, "%H:%M") == wanted_time for e in matching):
+                times = ", ".join(str(e.get("time", "")) for e in matching)
+                reasons.append(f"calendar event is not at {wanted_time} local time (got: {times})")
 
     if "file_contains" in checks:
         spec = checks["file_contains"] or {}

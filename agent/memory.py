@@ -163,12 +163,12 @@ def format_memory_for_prompt(mem: LongTermMemory) -> str:
     Format::
 
         User name: <name>
-        Preferences:
+        Preferences (defaults only; an explicit instruction in the task always wins):
         - <preference>          (or "- (none)")
         Facts:
         - <fact>                (or "- (none)")
     """
-    lines = [f"User name: {mem.user_name}", "Preferences:"]
+    lines = [f"User name: {mem.user_name}", "Preferences (defaults only; an explicit instruction in the task always wins):"]
     lines.extend(_bullet_lines(mem.preferences))
     lines.append("Facts:")
     lines.extend(_bullet_lines(mem.facts))

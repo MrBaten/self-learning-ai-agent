@@ -276,13 +276,16 @@ def _local_utc_offset() -> str:
 def _time_error(time: str) -> str | None:
     """Return the invalid-time error for ``time``, or None if it is ISO 8601 with a UTC offset."""
     value = time.strip()
+    offset = _local_utc_offset()
     if ISO_TIME_RE.match(value):
         try:
-            datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return None
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            given = parsed.strftime("%z")
+            # The event is in the user's own timezone: "3 PM" means 3 PM local, never UTC.
+            if f"{given[:3]}:{given[3:5]}" == offset:
+                return None
         except ValueError:
             pass
-    offset = _local_utc_offset()
     return (
         f"ERROR: Invalid time format '{time}'. create_calendar_event requires ISO 8601 with "
         f"the user's UTC offset: YYYY-MM-DDTHH:MM+HH:MM (e.g. 2026-11-25T11:00{offset}; the "

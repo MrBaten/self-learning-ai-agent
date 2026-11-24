@@ -49,7 +49,7 @@
     "checks": {
       "calendar_title": "Standup",
       "calendar_date": "tomorrow",
-      "calendar_time_contains": "T09:00",
+      "calendar_local_time": "09:00",
       "max_tool_errors": 0
     }
   },
@@ -59,7 +59,7 @@
     "checks": {
       "calendar_title": "Design Review",
       "calendar_date": "friday",
-      "calendar_time_contains": "T15:00",
+      "calendar_local_time": "15:00",
       "max_tool_errors": 0
     }
   },
@@ -67,8 +67,10 @@
     "id": 8,
     "task": "Read the file notes.txt and summarize it",
     "checks": {
-      "answer_contains": [
-        "kickoff"
+      "answer_contains_any": [
+        "kickoff",
+        "Q1 launch",
+        "MVP"
       ],
       "max_tool_errors": 0
     }
